@@ -26,7 +26,11 @@ sessionStore.on('error', function (error) {
 });
 
 const User = mongoose.model('User', { username: String, password: String });
-
+const Message = mongoose.model('Message', {
+  userId: mongoose.ObjectId,
+  message: String,
+  timestamp: Number
+});
 // const kitty = new Cat({ name: 'Zildjian' });
 // kitty.save().then(() => console.log('meow'));
 
@@ -40,6 +44,7 @@ app.use(
   session({
     secret: '9y32u4n324n234ui2423n4;l73;4o6p',
     cookie: {
+      sameSite: 'lax',
       secure: false,
       maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
     },
@@ -52,13 +57,42 @@ app.use(
 app.use(bodyParser.json());
 
 app.use((req, res, next) => {
-  console.log(`Request incoming: ${req.url}`);
   next();
 });
 
-app.get('/currentUser', (req, res) => {
-  console.log(req.session);
+app.get('/message', async (req, res) => {
+  const messages = await Message.find({});
 
+  const messagesWithUserName = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const user = await User.findById(messages[i].userId);
+    messagesWithUserName.push({
+      ...messages[i].toObject(),
+      username: user.username
+    });
+  }
+  res.json({
+    success: true,
+    messages: messagesWithUserName.sort((a, b) => a.timestamp - b.timestamp)
+  });
+});
+
+app.post('/message', async (req, res) => {
+  const user = req.session.user;
+
+  if (!user) return res.json({ success: false });
+
+  const message = new Message({
+    userId: user._id,
+    message: req.body.message,
+    timestamp: Date.now()
+  });
+  await message.save();
+  res.json({ success: true });
+});
+
+app.get('/currentUser', (req, res) => {
   res.json(req.session.user || {});
 });
 
@@ -71,8 +105,6 @@ app.post('/logout', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  console.log('login attempt', req.body);
-
   const user = await User.findOne({
     username: req.body.username,
     password: req.body.password
